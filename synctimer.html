@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Synchronized Timer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.1/peerjs.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-size: 2rem;
+        }
+
+        .warning {
+            background: rgba(255, 59, 48, 0.2);
+            border: 1px solid rgba(255, 59, 48, 0.5);
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none;
+        }
+
+        .warning.active {
+            display: block;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .setup-panel {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+        }
+
+        .setup-panel.hidden {
+            display: none;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 1rem;
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 5px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .timer-display {
+            font-size: 4rem;
+            text-align: center;
+            margin: 2rem 0;
+            font-weight: 300;
+            letter-spacing: 0.1em;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .status {
+            text-align: center;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            margin-bottom: 1rem;
+        }
+
+        .status.host {
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+        }
+
+        .status.connected {
+            background: rgba(33, 150, 243, 0.3);
+            border: 1px solid rgba(33, 150, 243, 0.5);
+        }
+
+        .users-list {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1rem;
+            border-radius: 10px;
+        }
+
+        .users-list h3 {
+            margin-bottom: 0.75rem;
+            font-size: 1.2rem;
+        }
+
+        .user-item {
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .user-item.host::after {
+            content: '👑';
+            margin-left: 0.5rem;
+        }
+
+        .connection-info {
+            font-size: 0.9rem;
+            text-align: center;
+            margin-top: 1rem;
+            opacity: 0.8;
+        }
+
+        .timer-setter {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .timer-setter input {
+            text-align: center;
+        }
+
+        @media (max-width: 480px) {
+            .timer-display {
+                font-size: 3rem;
+            }
+            
+            .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🕐 P2P Synchronized Timer</h1>
+        
+        <div id="multiTabWarning" class="warning">
+            ⚠️ Multiple tabs detected! Please use only one tab.
+        </div>
+
+        <div id="setupPanel" class="setup-panel">
+            <div class="form-group">
+                <label for="username">Your Name:</label>
+                <input type="text" id="username" placeholder="Enter your name" maxlength="20">
+            </div>
+            <div class="form-group">
+                <label for="mode">Connection Mode:</label>
+                <select id="mode">
+                    <option value="">-- Select Mode --</option>
+                    <option value="host">Host Timer (Control the timer)</option>
+                    <option value="join">Join Timer (View only)</option>
+                </select>
+            </div>
+            <div id="joinOptions" class="form-group" style="display: none;">
+                <label for="hostId">Host ID:</label>
+                <input type="text" id="hostId" placeholder="Enter host's ID to connect">
+            </div>
+            <div id="allowedIpGroup" class="form-group" style="display: none;">
+                <label for="allowedIp">Allowed IP (leave empty for no restriction):</label>
+                <input type="text" id="allowedIp" placeholder="e.g., 192.168.1.100">
+            </div>
+            <button onclick="initialize()">Start</button>
+        </div>
+
+        <div id="mainPanel" class="hidden">
+            <div id="statusDisplay" class="status">
+                <span id="statusText">Connecting...</span>
+            </div>
+
+            <div id="connectionInfo" class="connection-info"></div>
+
+            <div class="timer-display" id="timerDisplay">00:00:00</div>
+
+            <div id="hostControls" class="hidden">
+                <div class="timer-setter">
+                    <input type="number" id="hours" placeholder="HH" min="0" max="99" value="0">
+                    <input type="number" id="minutes" placeholder="MM" min="0" max="59" value="0">
+                    <input type="number" id="seconds" placeholder="SS" min="0" max="59" value="0">
+                </div>
+                <div class="controls">
+                    <button onclick="setTimer()">Set Timer</button>
+                    <button onclick="startTimer()">Start</button>
+                    <button onclick="pauseTimer()">Pause</button>
+                </div>
+                <div class="controls">
+                    <button onclick="resetTimer()">Reset</button>
+                    <button onclick="addMinute()">+1 Min</button>
+                    <button onclick="subtractMinute()">-1 Min</button>
+                </div>
+            </div>
+
+            <div class="users-list">
+                <h3>Connected Users (<span id="userCount">0</span>)</h3>
+                <div id="usersList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let peer;
+        let connections = [];
+        let isHost = false;
+        let timerInterval;
+        let timerState = {
+            time: 0,
+            isRunning: false,
+            lastUpdate: Date.now()
+        };
+        let users = new Map();
+        let myUsername = '';
+        let hostPeer;
+        let allowedIpAddress = '';
+        let tabId = Math.random().toString(36).substr(2, 9);
+        
+        // Multi-tab detection using BroadcastChannel
+        const channel = new BroadcastChannel('timer_channel');
+        let isActiveTab = true;
+        
+        channel.onmessage = (event) => {
+            if (event.data.type === 'tab_check') {
+                if (event.data.tabId !== tabId && isActiveTab) {
+                    channel.postMessage({ type: 'tab_response', tabId: tabId, timestamp: Date.now() });
+                }
+            } else if (event.data.type === 'tab_response') {
+                if (event.data.tabId !== tabId && event.data.timestamp > Date.now() - 1000) {
+                    document.getElementById('multiTabWarning').classList.add('active');
+                    if (peer) {
+                        peer.destroy();
+                    }
+                }
+            }
+        };
+        
+        // Check for other tabs periodically
+        setInterval(() => {
+            if (isActiveTab) {
+                channel.postMessage({ type: 'tab_check', tabId: tabId });
+            }
+        }, 3000);
+
+        // Mode selection handler
+        document.getElementById('mode').addEventListener('change', (e) => {
+            const joinOptions = document.getElementById('joinOptions');
+            const allowedIpGroup = document.getElementById('allowedIpGroup');
+            
+            if (e.target.value === 'join') {
+                joinOptions.style.display = 'block';
+                allowedIpGroup.style.display = 'none';
+            } else if (e.target.value === 'host') {
+                joinOptions.style.display = 'none';
+                allowedIpGroup.style.display = 'block';
+            } else {
+                joinOptions.style.display = 'none';
+                allowedIpGroup.style.display = 'none';
+            }
+        });
+
+        function initialize() {
+            const username = document.getElementById('username').value.trim();
+            const mode = document.getElementById('mode').value;
+            
+            if (!username || !mode) {
+                alert('Please enter your name and select a mode');
+                return;
+            }
+            
+            myUsername = username;
+            isHost = (mode === 'host');
+            
+            if (isHost) {
+                allowedIpAddress = document.getElementById('allowedIp').value.trim();
+            }
+            
+            document.getElementById('setupPanel').classList.add('hidden');
+            document.getElementById('mainPanel').classList.remove('hidden');
+            
+            if (isHost) {
+                initializeHost();
+            } else {
+                const hostId = document.getElementById('hostId').value.trim();
+                if (!hostId) {
+                    alert('Please enter the host ID');
+                    document.getElementById('setupPanel').classList.remove('hidden');
+                    document.getElementById('mainPanel').classList.add('hidden');
+                    return;
+                }
+                initializeClient(hostId);
+            }
+        }
+
+        function initializeHost() {
+            peer = new Peer();
+            
+            peer.on('open', (id) => {
+                console.log('Host ID:', id);
+                document.getElementById('statusDisplay').className = 'status host';
+                document.getElementById('statusText').textContent = '👑 Hosting Timer';
+                document.getElementById('connectionInfo').innerHTML = 
+                    `<strong>Your Host ID:</strong> ${id}<br>
+                     <small>Share this ID with others to let them join</small>`;
+                document.getElementById('hostControls').classList.remove('hidden');
+                
+                users.set('host', { name: myUsername, isHost: true });
+                updateUsersList();
+            });
+            
+            peer.on('connection', (conn) => {
+                conn.on('open', () => {
+                    connections.push(conn);
+                    
+                    // Send current timer state to new connection
+                    conn.send({
+                        type: 'timer_update',
+                        state: timerState
+                    });
+                    
+                    // Request user info
+                    conn.send({ type: 'request_info' });
+                });
+                
+                conn.on('data', (data) => {
+                    handleHostMessage(data, conn);
+                });
+                
+                conn.on('close', () => {
+                    connections = connections.filter(c => c !== conn);
+                    // Remove user from list
+                    let userToRemove = null;
+                    users.forEach((user, id) => {
+                        if (user.conn === conn) {
+                            userToRemove = id;
+                        }
+                    });
+                    if (userToRemove) {
+                        users.delete(userToRemove);
+                        updateUsersList();
+                        broadcastUserList();
+                    }
+                });
+            });
+            
+            peer.on('error', (err) => {
+                console.error('Host error:', err);
+                alert('Connection error: ' + err.message);
+            });
+        }
+
+        function initializeClient(hostId) {
+            peer = new Peer();
+            
+            peer.on('open', (id) => {
+                console.log('Client ID:', id);
+                hostPeer = peer.connect(hostId);
+                
+                hostPeer.on('open', () => {
+                    document.getElementById('statusDisplay').className = 'status connected';
+                    document.getElementById('statusText').textContent = '✅ Connected to Timer';
+                    document.getElementById('connectionInfo').innerHTML = 
+                        `<strong>Connected to:</strong> ${hostId}`;
+                });
+                
+                hostPeer.on('data', (data) => {
+                    handleClientMessage(data);
+                });
+                
+                hostPeer.on('close', () => {
+                    document.getElementById('statusText').textContent = '❌ Disconnected from host';
+                    alert('Lost connection to host!');
+                });
+                
+                hostPeer.on('error', (err) => {
+                    console.error('Connection error:', err);
+                    alert('Failed to connect to host: ' + err.message);
+                });
+            });
+            
+            peer.on('error', (err) => {
+                console.error('Client error:', err);
+                alert('Connection error: ' + err.message);
+            });
+        }
+
+        function handleHostMessage(data, conn) {
+            if (data.type === 'user_info') {
+                // Check IP restriction if enabled
+                if (allowedIpAddress && data.ip && data.ip !== allowedIpAddress) {
+                    conn.send({ type: 'access_denied', reason: 'IP not allowed' });
+                    conn.close();
+                    return;
+                }
+                
+                const userId = Math.random().toString(36).substr(2, 9);
+                users.set(userId, { 
+                    name: data.name, 
+                    isHost: false,
+                    conn: conn
+                });
+                updateUsersList();
+                broadcastUserList();
+            }
+        }
+
+        function handleClientMessage(data) {
+            if (data.type === 'timer_update') {
+                timerState = data.state;
+                updateTimerDisplay();
+                if (timerState.isRunning) {
+                    startClientTimer();
+                } else {
+                    stopClientTimer();
+                }
+            } else if (data.type === 'users_update') {
+                users = new Map(data.users);
+                updateUsersList();
+            } else if (data.type === 'request_info') {
+                // Get approximate IP (this is client-side, so not reliable for security)
+                fetch('https://api.ipify.org?format=json')
+                    .then(response => response.json())
+                    .then(data => {
+                        hostPeer.send({
+                            type: 'user_info',
+                            name: myUsername,
+                            ip: data.ip
+                        });
+                    })
+                    .catch(() => {
+                        hostPeer.send({
+                            type: 'user_info',
+                            name: myUsername,
+                            ip: null
+                        });
+                    });
+            } else if (data.type === 'access_denied') {
+                alert('Access denied: ' + data.reason);
+                peer.destroy();
+            }
+        }
+
+        function broadcastTimerState() {
+            const message = {
+                type: 'timer_update',
+                state: timerState
+            };
+            connections.forEach(conn => {
+                try {
+                    conn.send(message);
+                } catch (e) {
+                    console.error('Failed to send to connection:', e);
+                }
+            });
+        }
+
+        function broadcastUserList() {
+            const userList = Array.from(users.entries()).map(([id, user]) => 
+                [id, { name: user.name, isHost: user.isHost }]
+            );
+            const message = {
+                type: 'users_update',
+                users: userList
+            };
+            connections.forEach(conn => {
+                try {
+                    conn.send(message);
+                } catch (e) {
+                    console.error('Failed to send user list:', e);
+                }
+            });
+        }
+
+        function updateUsersList() {
+            const usersList = document.getElementById('usersList');
+            const userCount = document.getElementById('userCount');
+            
+            usersList.innerHTML = '';
+            userCount.textContent = users.size;
+            
+            users.forEach((user) => {
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-item' + (user.isHost ? ' host' : '');
+                userDiv.textContent = user.name;
+                usersList.appendChild(userDiv);
+            });
+        }
+
+        function updateTimerDisplay() {
+            const hours = Math.floor(timerState.time / 3600);
+            const minutes = Math.floor((timerState.time % 3600) / 60);
+            const seconds = timerState.time % 60;
+            
+            document.getElementById('timerDisplay').textContent = 
+                `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function setTimer() {
+            if (!isHost) return;
+            
+            const hours = parseInt(document.getElementById('hours').value) || 0;
+            const minutes = parseInt(document.getElementById('minutes').value) || 0;
+            const seconds = parseInt(document.getElementById('seconds').value) || 0;
+            
+            timerState.time = hours * 3600 + minutes * 60 + seconds;
+            timerState.isRunning = false;
+            timerState.lastUpdate = Date.now();
+            
+            updateTimerDisplay();
+            broadcastTimerState();
+        }
+
+        function startTimer() {
+            if (!isHost) return;
+            
+            if (timerState.time <= 0) {
+                alert('Please set a timer first!');
+                return;
+            }
+            
+            timerState.isRunning = true;
+            timerState.lastUpdate = Date.now();
+            
+            if (!timerInterval) {
+                timerInterval = setInterval(() => {
+                    if (timerState.isRunning && timerState.time > 0) {
+                        timerState.time--;
+                        timerState.lastUpdate = Date.now();
+                        updateTimerDisplay();
+                        
+                        if (timerState.time === 0) {
+                            pauseTimer();
+                            alert('Timer finished!');
+                        }
+                        
+                        // Broadcast state every second
+                        broadcastTimerState();
+                    }
+                }, 1000);
+            }
+            
+            broadcastTimerState();
+        }
+
+        function pauseTimer() {
+            if (!isHost) return;
+            
+            timerState.isRunning = false;
+            timerState.lastUpdate = Date.now();
+            broadcastTimerState();
+        }
+
+        function resetTimer() {
+            if (!isHost) return;
+            
+            timerState.time = 0;
+            timerState.isRunning = false;
+            timerState.lastUpdate = Date.now();
+            
+            document.getElementById('hours').value = 0;
+            document.getElementById('minutes').value = 0;
+            document.getElementById('seconds').value = 0;
+            
+            updateTimerDisplay();
+            broadcastTimerState();
+        }
+
+        function addMinute() {
+            if (!isHost) return;
+            
+            timerState.time += 60;
+            timerState.lastUpdate = Date.now();
+            updateTimerDisplay();
+            broadcastTimerState();
+        }
+
+        function subtractMinute() {
+            if (!isHost) return;
+            
+            timerState.time = Math.max(0, timerState.time - 60);
+            timerState.lastUpdate = Date.now();
+            updateTimerDisplay();
+            broadcastTimerState();
+        }
+
+        function startClientTimer() {
+            if (timerInterval) return;
+            
+            timerInterval = setInterval(() => {
+                if (timerState.isRunning && timerState.time > 0) {
+                    // Calculate time based on last update
+                    const elapsed = Math.floor((Date.now() - timerState.lastUpdate) / 1000);
+                    if (elapsed >= 1) {
+                        timerState.time = Math.max(0, timerState.time - elapsed);
+                        timerState.lastUpdate = Date.now();
+                        updateTimerDisplay();
+                    }
+                }
+            }, 100);
+        }
+
+        function stopClientTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (peer) {
+                peer.destroy();
+            }
+        });
+    </script>
+</body>
+</html>
